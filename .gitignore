@@ -1,0 +1,53 @@
+# ── Python ────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+condaenv.fzitepbb.requirements.txt
+
+# ── Virtual environments ───────────────────────────────────────────────────
+.venv/
+venv/
+env/
+.env
+
+# ── PyTorch / model weights ────────────────────────────────────────────────
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+
+# ── Training artefacts ─────────────────────────────────────────────────────
+evaluation/elo_history.csv
+runs/
+logs/
+*.log
+
+# ── Large data files (PGN databases can be multi-GB) ──────────────────────
+chess_rl/games/*.pgn
+chess_rl/games/*.pgn.bz2
+chess_rl/games/*.pgn.zst
+*.pgn
+*.pgn.bz2
+*.pgn.zst
+
+# ── Jupyter ────────────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+*.ipynb
+
+# ── OS noise ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── IDE ───────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo

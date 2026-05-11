@@ -1,0 +1,14 @@
+name: chess-rl
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - numpy
+  - tqdm
+  - matplotlib
+  - pip:
+      - python-chess
+      - torch==2.11.0
