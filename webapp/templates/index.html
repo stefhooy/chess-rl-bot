@@ -377,6 +377,19 @@ input[type=range] { flex: 1; accent-color: var(--accent); }
     <div id="status" class="idle">Choose a colour and press Start.</div>
 
     <div class="card">
+      <h3>Marvin's Elo</h3>
+      <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:8px">
+        <span id="elo-number" style="font-size:2rem;font-weight:700;font-family:monospace;color:var(--accent)">—</span>
+        <span id="elo-delta" style="font-size:0.8rem;color:var(--muted)"></span>
+      </div>
+      <svg id="elo-chart" viewBox="0 0 240 56" width="100%" height="56"
+           style="display:block;overflow:visible"></svg>
+      <div id="elo-meta" style="font-size:0.75rem;color:var(--muted);margin-top:6px">
+        Train to see Elo grow.
+      </div>
+    </div>
+
+    <div class="card">
       <h3>Move History</h3>
       <div class="history-box" id="history">
         <span style="color:var(--muted)">No moves yet.</span>
@@ -699,6 +712,91 @@ function resign() {
   setStatus('game-over', `You resigned. ${winner} wins.`);
   $('#btn-hint, #btn-resign').prop('disabled', true);
 }
+
+// ── Elo panel ──────────────────────────────────────────────────────────────
+function fetchElo() {
+  fetch('/api/elo')
+  .then(r => r.json())
+  .then(data => {
+    const numEl   = document.getElementById('elo-number');
+    const metaEl  = document.getElementById('elo-meta');
+    const deltaEl = document.getElementById('elo-delta');
+    const chart   = document.getElementById('elo-chart');
+
+    if (!data.current || !data.history.length) {
+      numEl.textContent  = '—';
+      metaEl.textContent = 'No training data yet. Run train.py to start.';
+      deltaEl.textContent = '';
+      chart.innerHTML = '';
+      return;
+    }
+
+    const h = data.history;
+    numEl.textContent = Math.round(data.current);
+
+    // Delta vs previous pit
+    if (h.length >= 2) {
+      const diff = h[h.length-1].elo - h[h.length-2].elo;
+      const sign = diff >= 0 ? '+' : '';
+      deltaEl.textContent = `${sign}${diff.toFixed(0)} last pit`;
+      deltaEl.style.color = diff >= 0 ? 'var(--green)' : 'var(--red)';
+    } else {
+      deltaEl.textContent = 'Pit 1';
+    }
+
+    // Last pit stats
+    const last = h[h.length - 1];
+    metaEl.textContent =
+      `Pit ${last.pit}  ·  W ${last.wins}  D ${last.draws}  L ${last.losses}  ·  ${(last.win_rate*100).toFixed(0)}% win rate`;
+
+    // Sparkline
+    drawEloChart(chart, h);
+  })
+  .catch(() => {});
+}
+
+function drawEloChart(svg, history) {
+  const W = 240, H = 56, pad = 4;
+  const elos = history.map(h => h.elo);
+  const lo   = Math.min(1200, ...elos) - 5;
+  const hi   = Math.max(1200, ...elos) + 5;
+  const range = hi - lo || 1;
+
+  function px(i) { return history.length < 2 ? W/2 : pad + (i / (history.length-1)) * (W - 2*pad); }
+  function py(e) { return H - pad - ((e - lo) / range) * (H - 2*pad); }
+
+  // Baseline at Elo 1200
+  const baseY = py(1200).toFixed(1);
+
+  // Area fill under the line
+  const pts  = history.map((h,i) => `${px(i).toFixed(1)},${py(h.elo).toFixed(1)}`).join(' ');
+  const first = `${px(0).toFixed(1)},${H}`;
+  const last_ = `${px(history.length-1).toFixed(1)},${H}`;
+
+  svg.innerHTML = `
+    <defs>
+      <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%"   stop-color="#58a6ff" stop-opacity="0.3"/>
+        <stop offset="100%" stop-color="#58a6ff" stop-opacity="0"/>
+      </linearGradient>
+    </defs>
+    <line x1="${pad}" y1="${baseY}" x2="${W-pad}" y2="${baseY}"
+          stroke="var(--border)" stroke-width="1" stroke-dasharray="3,3"/>
+    <polygon points="${first} ${pts} ${last_}"
+             fill="url(#eg)"/>
+    <polyline points="${pts}"
+              fill="none" stroke="var(--accent)" stroke-width="2"
+              stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${px(history.length-1).toFixed(1)}" cy="${py(elos[elos.length-1]).toFixed(1)}"
+            r="3" fill="var(--accent)"/>
+    <text x="${pad}" y="${H-1}" font-size="8" fill="var(--muted)">${Math.round(lo+5)}</text>
+    <text x="${pad}" y="10"    font-size="8" fill="var(--muted)">${Math.round(hi-5)}</text>
+  `;
+}
+
+// Fetch immediately then refresh every 15 seconds (live during training)
+fetchElo();
+setInterval(fetchElo, 15000);
 
 // ── Boot ───────────────────────────────────────────────────────────────────
 applyBoardTheme('green');

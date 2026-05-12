@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import chess
+import csv
 import sys
 import torch
 from pathlib import Path
@@ -205,6 +206,30 @@ def hint():
 @app.route("/api/state")
 def state():
     return jsonify(_build_state())
+
+
+@app.route("/api/elo")
+def elo():
+    csv_path = ROOT / "evaluation" / "elo_history.csv"
+    if not csv_path.exists():
+        return jsonify({"current": None, "history": [], "message": "No training data yet."})
+
+    rows = []
+    with open(csv_path, newline="") as f:
+        for row in csv.DictReader(f):
+            rows.append({
+                "pit":      int(row["pit"]),
+                "elo":      float(row["elo"]),
+                "win_rate": float(row["win_rate"]),
+                "wins":     int(row["wins"]),
+                "draws":    int(row["draws"]),
+                "losses":   int(row["losses"]),
+            })
+
+    return jsonify({
+        "current": rows[-1]["elo"] if rows else None,
+        "history": rows,
+    })
 
 
 # ── Entry point ────────────────────────────────────────────────────────────
