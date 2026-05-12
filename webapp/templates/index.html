@@ -454,7 +454,6 @@ function rebuildBoard(fen) {
     orientation: orient,
     draggable: false,
     pieceTheme: PIECE_THEMES[pieceTheme],
-    onSquareClick: onSquareClick,
     showErrors: 'console',
   });
   redrawLastMove();
@@ -704,6 +703,13 @@ function resign() {
 // ── Boot ───────────────────────────────────────────────────────────────────
 applyBoardTheme('green');
 rebuildBoard('start');
+
+// Capture-phase listener: fires before chessboard.js internal handlers,
+// immune to stopPropagation() on piece elements.
+document.getElementById('board').addEventListener('click', function(evt) {
+  const sqEl = evt.target.closest('[data-square]');
+  if (sqEl) onSquareClick(sqEl.getAttribute('data-square'));
+}, true);
 </script>
 </body>
 </html>
