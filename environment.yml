@@ -12,3 +12,4 @@ dependencies:
   - pip:
       - python-chess
       - torch==2.11.0
+      - flask

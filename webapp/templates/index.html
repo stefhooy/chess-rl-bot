@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Marvin — Chess RL Bot</title>
+
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<link  rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+
+<style>
+/* ── Design tokens ─────────────────────────────────────────────────────── */
+:root {
+  --bg:        #0d1117;
+  --panel:     #161b22;
+  --card:      #21262d;
+  --border:    #30363d;
+  --text:      #c9d1d9;
+  --muted:     #8b949e;
+  --accent:    #58a6ff;
+  --green:     #3fb950;
+  --yellow:    #e3b341;
+  --red:       #f85149;
+
+  /* board square colours — overridden by theme switcher */
+  --sq-light:  #eeeed2;
+  --sq-dark:   #769656;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Header ────────────────────────────────────────────────────────────── */
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 20px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.logo {
+  font-size: 1.3rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--text);
+}
+.logo em { color: var(--accent); font-style: normal; }
+
+.theme-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+.theme-bar label { font-size: 0.75rem; color: var(--muted); }
+
+select {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  outline: none;
+}
+select:hover { border-color: var(--accent); }
+
+/* ── Main layout ───────────────────────────────────────────────────────── */
+main {
+  display: flex;
+  gap: 20px;
+  padding: 20px;
+  flex: 1;
+  justify-content: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+/* ── Board area ────────────────────────────────────────────────────────── */
+.board-area { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
+.board-row  { display: flex; align-items: stretch; gap: 8px; }
+
+/* Eval bar */
+.eval-bar {
+  width: 18px;
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+#eval-black { background: #2c2c2c; transition: flex .5s ease; flex: 1; }
+#eval-white { background: #f0f0f0; transition: flex .5s ease; flex: 1; }
+
+#eval-text {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-family: monospace;
+  text-align: center;
+}
+
+/* Board squares — override chessboard.js defaults */
+.white-1e1d7 { background-color: var(--sq-light) !important; }
+.black-3c85d { background-color: var(--sq-dark)  !important; }
+
+/* Square highlights via JS-added classes */
+[data-square] { position: relative; }
+
+[data-square].sq-sel   { background-color: rgba(255,215,0,.65) !important; }
+[data-square].sq-last  { background-color: rgba(155,199,0,.40) !important; }
+[data-square].sq-hint  { background-color: rgba(80,160,255,.40) !important; }
+
+/* Legal move dots */
+[data-square].sq-dot::after {
+  content: '';
+  position: absolute;
+  width: 34%; height: 34%;
+  border-radius: 50%;
+  background: rgba(0,0,0,.20);
+  top: 33%; left: 33%;
+  pointer-events: none;
+  z-index: 5;
+}
+[data-square].sq-ring::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  border: 4px solid rgba(0,0,0,.20);
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* ── Side panel ────────────────────────────────────────────────────────── */
+.side-panel {
+  width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.card h3 {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+/* Color picker */
+.color-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+
+.col-btn {
+  padding: 8px 4px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+  font-size: 1.1rem;
+  cursor: pointer;
+  text-align: center;
+  transition: border-color .15s, background .15s;
+}
+.col-btn:hover   { border-color: var(--accent); }
+.col-btn.active  { border-color: var(--accent); background: rgba(88,166,255,.15); }
+
+.sim-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.sim-row span { font-size: 0.8rem; color: var(--muted); }
+input[type=range] { flex: 1; accent-color: var(--accent); }
+.sim-val { font-family: monospace; font-size: 0.82rem; min-width: 32px; text-align: right; }
+
+/* Buttons */
+.btn {
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition: opacity .15s, transform .1s;
+  margin-top: 8px;
+}
+.btn:active { transform: scale(.97); }
+.btn:disabled { opacity: .38; cursor: not-allowed; }
+
+.btn-primary  { background: var(--accent); color: #0d1117; }
+.btn-ghost    { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+.btn-ghost:not(:disabled):hover { border-color: var(--accent); }
+
+/* Status badge */
+#status {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  font-size: 0.88rem;
+  text-align: center;
+  transition: border-color .3s;
+  background: var(--panel);
+}
+#status.your-turn { border-color: var(--green);  color: var(--green);  }
+#status.thinking  { border-color: var(--yellow); color: var(--yellow); }
+#status.game-over { border-color: var(--red);    color: var(--red);    }
+#status.idle      { color: var(--muted); }
+
+/* Move history */
+.history-box {
+  max-height: 190px;
+  overflow-y: auto;
+  font-family: monospace;
+  font-size: 0.82rem;
+  line-height: 1.7;
+}
+.history-box::-webkit-scrollbar { width: 4px; }
+.history-box::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.mv-pair { display: flex; gap: 4px; }
+.mv-num  { color: var(--muted); min-width: 26px; }
+.mv-san  { padding: 0 4px; border-radius: 3px; }
+.mv-san.latest { background: rgba(155,199,0,.25); }
+
+/* Candidates */
+.cand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255,255,255,.04);
+  font-size: 0.83rem;
+}
+.cand:last-child { border-bottom: none; }
+.cand-move { font-family: monospace; font-weight: 700; min-width: 48px; }
+.cand-track { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.cand-fill  { height: 100%; background: var(--accent); border-radius: 3px; transition: width .5s; }
+.cand-pct   { font-size: 0.78rem; color: var(--muted); min-width: 32px; text-align: right; }
+
+/* Action row */
+.action-row { display: flex; gap: 8px; }
+.action-row .btn { margin-top: 0; }
+
+/* Spinner */
+.spin {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border: 2px solid rgba(227,179,65,.3);
+  border-top-color: var(--yellow);
+  border-radius: 50%;
+  animation: rot .7s linear infinite;
+  vertical-align: middle;
+  margin-right: 5px;
+}
+@keyframes rot { to { transform: rotate(360deg); } }
+
+/* ── Promotion modal ───────────────────────────────────────────────────── */
+.overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.72);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+}
+.overlay.open { display: flex; }
+
+.modal {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 28px 32px;
+  text-align: center;
+}
+.modal p { font-size: 0.9rem; color: var(--muted); margin-bottom: 18px; }
+.promo-row { display: flex; gap: 14px; justify-content: center; }
+
+.promo-btn {
+  background: var(--card);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.promo-btn:hover { border-color: var(--accent); background: rgba(88,166,255,.12); }
+.promo-sym  { font-size: 2.4rem; line-height: 1; }
+.promo-name { font-size: 0.7rem; color: var(--muted); }
+
+@media (max-width: 680px) {
+  main { padding: 12px; gap: 14px; }
+  .side-panel { width: 100%; max-width: 480px; }
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">MARV<em>IN</em> ♟</div>
+  <div class="theme-bar">
+    <label>Board</label>
+    <select id="sel-board" onchange="applyBoardTheme(this.value)">
+      <option value="green"  selected>Lichess Green</option>
+      <option value="classic">Classic Brown</option>
+      <option value="blue">Ocean Blue</option>
+      <option value="walnut">Walnut</option>
+      <option value="purple">Purple</option>
+      <option value="dark">Dark Slate</option>
+      <option value="pink">Rose</option>
+    </select>
+    <label>Pieces</label>
+    <select id="sel-piece" onchange="applyPieceTheme(this.value)">
+      <option value="cburnett" selected>CBurnett</option>
+      <option value="merida">Merida</option>
+      <option value="alpha">Alpha</option>
+      <option value="fantasy">Fantasy</option>
+      <option value="chessnut">Chessnut</option>
+      <option value="wikipedia">Wikipedia</option>
+    </select>
+  </div>
+</header>
+
+<main>
+  <!-- Board + eval bar -->
+  <div class="board-area">
+    <div class="board-row">
+      <div class="eval-bar">
+        <div id="eval-black"></div>
+        <div id="eval-white"></div>
+      </div>
+      <div id="board" style="width:480px"></div>
+    </div>
+    <div id="eval-text">—</div>
+  </div>
+
+  <!-- Controls -->
+  <div class="side-panel">
+
+    <div class="card">
+      <h3>New Game</h3>
+      <div class="color-row">
+        <button class="col-btn active" id="btn-white" onclick="pickColor('white')">♙ White</button>
+        <button class="col-btn"        id="btn-black" onclick="pickColor('black')">♟ Black</button>
+      </div>
+      <div class="sim-row">
+        <span>Simulations</span>
+        <input type="range" id="sim" min="10" max="400" step="10" value="100"
+               oninput="document.getElementById('simval').textContent=this.value">
+        <span class="sim-val" id="simval">100</span>
+      </div>
+      <button class="btn btn-primary" onclick="startGame()">Start Game</button>
+    </div>
+
+    <div id="status" class="idle">Choose a colour and press Start.</div>
+
+    <div class="card">
+      <h3>Move History</h3>
+      <div class="history-box" id="history">
+        <span style="color:var(--muted)">No moves yet.</span>
+      </div>
+    </div>
+
+    <div class="card" id="cand-card" style="display:none">
+      <h3>Marvin considered</h3>
+      <div id="candidates"></div>
+    </div>
+
+    <div class="action-row">
+      <button class="btn btn-ghost" id="btn-hint"   disabled onclick="getHint()">Hint</button>
+      <button class="btn btn-ghost" id="btn-resign" disabled onclick="resign()">Resign</button>
+    </div>
+
+  </div>
+</main>
+
+<!-- Promotion dialog -->
+<div class="overlay" id="promo-overlay">
+  <div class="modal">
+    <p>Promote pawn to:</p>
+    <div class="promo-row" id="promo-row"></div>
+  </div>
+</div>
+
+<script>
+// ── Theme data ─────────────────────────────────────────────────────────────
+const BOARD_THEMES = {
+  green:   ['#eeeed2','#769656'],
+  classic: ['#f0d9b5','#b58863'],
+  blue:    ['#dee3e6','#8ca2ad'],
+  walnut:  ['#e8cda0','#8b5e3c'],
+  purple:  ['#f0e4f8','#9b6fae'],
+  dark:    ['#7a8b8b','#4a5f5f'],
+  pink:    ['#fde8e8','#c07777'],
+};
+
+const PIECE_THEMES = {
+  cburnett:  'https://lichess1.org/assets/piece/cburnett/{piece}.svg',
+  merida:    'https://lichess1.org/assets/piece/merida/{piece}.svg',
+  alpha:     'https://lichess1.org/assets/piece/alpha/{piece}.svg',
+  fantasy:   'https://lichess1.org/assets/piece/fantasy/{piece}.svg',
+  chessnut:  'https://lichess1.org/assets/piece/chessnut/{piece}.svg',
+  wikipedia: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png',
+};
+
+// ── State ──────────────────────────────────────────────────────────────────
+let board        = null;
+let game         = new Chess();
+let playerColor  = 'white';
+let selectedSq   = null;
+let active       = false;
+let pendingPromo = null;
+let pieceTheme   = 'cburnett';
+
+// ── Theme functions ────────────────────────────────────────────────────────
+function applyBoardTheme(name) {
+  const [light, dark] = BOARD_THEMES[name] || BOARD_THEMES.green;
+  document.documentElement.style.setProperty('--sq-light', light);
+  document.documentElement.style.setProperty('--sq-dark',  dark);
+}
+
+function applyPieceTheme(name) {
+  pieceTheme = name;
+  if (board) rebuildBoard(game.fen());
+}
+
+function rebuildBoard(fen) {
+  const orient = playerColor;
+  if (board) board.destroy();
+  board = Chessboard('board', {
+    position: fen || 'start',
+    orientation: orient,
+    draggable: false,
+    pieceTheme: PIECE_THEMES[pieceTheme],
+    onSquareClick: onSquareClick,
+    showErrors: 'console',
+  });
+  redrawLastMove();
+}
+
+// ── Color picker ───────────────────────────────────────────────────────────
+function pickColor(c) {
+  playerColor = c;
+  $('#btn-white').toggleClass('active', c === 'white');
+  $('#btn-black').toggleClass('active', c === 'black');
+}
+
+// ── Start game ─────────────────────────────────────────────────────────────
+function startGame() {
+  const sims = parseInt($('#sim').val());
+  active = false;
+  selectedSq = null;
+  pendingPromo = null;
+  clearHL();
+  setStatus('idle', 'Starting…');
+  $('#cand-card').hide();
+  $('#btn-hint, #btn-resign').prop('disabled', true);
+  updateHistory([]);
+
+  rebuildBoard('start');
+
+  fetch('/api/new_game', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ color: playerColor, simulations: sims }),
+  })
+  .then(r => r.json())
+  .then(s => {
+    game.load(s.fen);
+    board.position(s.fen, false);
+    active = true;
+    $('#btn-hint, #btn-resign').prop('disabled', false);
+    applyState(s);
+  })
+  .catch(e => setStatus('idle', 'Error: ' + e.message));
+}
+
+// ── Click handler ──────────────────────────────────────────────────────────
+function onSquareClick(sq) {
+  if (!active || game.turn() !== playerColor[0]) return;
+
+  const piece = game.get(sq);
+
+  if (!selectedSq) {
+    if (piece && piece.color === playerColor[0]) selectSq(sq);
+    return;
+  }
+  if (sq === selectedSq) { deselect(); return; }
+  if (piece && piece.color === playerColor[0]) { deselect(); selectSq(sq); return; }
+  tryMove(selectedSq, sq);
+}
+
+function selectSq(sq) {
+  clearHL();
+  selectedSq = sq;
+  $(`[data-square="${sq}"]`).addClass('sq-sel');
+  game.moves({ square: sq, verbose: true }).forEach(m => {
+    const cls = game.get(m.to) ? 'sq-ring' : 'sq-dot';
+    $(`[data-square="${m.to}"]`).addClass(cls);
+  });
+}
+
+function deselect() {
+  clearHL();
+  selectedSq = null;
+}
+
+function clearHL() {
+  $('[data-square]').removeClass('sq-sel sq-dot sq-ring sq-hint');
+}
+
+function redrawLastMove() {
+  // called after board rebuild so last-move highlight persists
+}
+
+// ── Move attempt ───────────────────────────────────────────────────────────
+function tryMove(from, to) {
+  deselect();
+
+  const test = game.move({ from, to, promotion: 'q' });
+  if (!test) {
+    const p = game.get(to);
+    if (p && p.color === playerColor[0]) selectSq(to);
+    return;
+  }
+  game.undo();
+
+  const isPromo = game.get(from).type === 'p' &&
+    ((playerColor === 'white' && to[1] === '8') ||
+     (playerColor === 'black' && to[1] === '1'));
+
+  if (isPromo) { pendingPromo = {from, to}; showPromo(); }
+  else sendMove(from, to, null);
+}
+
+// ── Send move to server ────────────────────────────────────────────────────
+function sendMove(from, to, promotion) {
+  active = false;
+  $('#btn-hint').prop('disabled', true);
+  setStatus('thinking', '<span class="spin"></span>Marvin is thinking…');
+
+  fetch('/api/move', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ from, to, promotion }),
+  })
+  .then(r => r.json())
+  .then(s => {
+    if (s.error) { setStatus('your-turn', 'Error: ' + s.error); active = true; return; }
+    game.load(s.fen);
+    board.position(s.fen, false);
+    applyState(s);
+    if (s.status === 'playing') {
+      active = true;
+      $('#btn-hint').prop('disabled', false);
+    }
+  })
+  .catch(() => { setStatus('your-turn', 'Network error'); active = true; });
+}
+
+// ── Apply server state ─────────────────────────────────────────────────────
+function applyState(s) {
+  // Eval bar
+  const ev = s.evaluation;
+  const pct = Math.max(5, Math.min(95, (ev + 1) / 2 * 100));
+  $('#eval-black').css('flex', 100 - pct);
+  $('#eval-white').css('flex', pct);
+  const sign = ev >= 0 ? '+' : '';
+  $('#eval-text').text(`${sign}${ev.toFixed(2)} (White)`);
+
+  // Last move highlight
+  $('[data-square]').removeClass('sq-last');
+  if (s.lastMove) {
+    $(`[data-square="${s.lastMove.from}"]`).addClass('sq-last');
+    $(`[data-square="${s.lastMove.to}"]`).addClass('sq-last');
+  }
+
+  updateHistory(s.moveHistory);
+
+  if (s.topMoves && s.topMoves.length) showCandidates(s.topMoves);
+
+  if (s.status === 'over') {
+    setStatus('game-over', s.result || 'Game over.');
+    $('#btn-hint, #btn-resign').prop('disabled', true);
+  } else if (s.turn === s.playerColor) {
+    const chk = s.isCheck ? ' — Check!' : '';
+    setStatus('your-turn', 'Your turn' + chk);
+  } else {
+    setStatus('thinking', '<span class="spin"></span>Marvin is thinking…');
+  }
+}
+
+function updateHistory(hist) {
+  if (!hist.length) {
+    $('#history').html('<span style="color:var(--muted)">No moves yet.</span>');
+    return;
+  }
+  let html = '';
+  for (let i = 0; i < hist.length; i += 2) {
+    const n  = Math.floor(i/2) + 1;
+    const w  = hist[i]   || '';
+    const b  = hist[i+1] || '';
+    const wl = (i   === hist.length-1) ? ' latest' : '';
+    const bl = (i+1 === hist.length-1) ? ' latest' : '';
+    html += `<div class="mv-pair">
+      <span class="mv-num">${n}.</span>
+      <span class="mv-san${wl}">${w}</span>
+      ${b ? `<span class="mv-san${bl}">${b}</span>` : ''}
+    </div>`;
+  }
+  const box = document.getElementById('history');
+  box.innerHTML = html;
+  box.scrollTop = box.scrollHeight;
+}
+
+function showCandidates(moves) {
+  $('#cand-card').show();
+  $('#candidates').html(moves.map(m => {
+    const pct = Math.round(m.prob * 100);
+    return `<div class="cand">
+      <span class="cand-move">${m.move}</span>
+      <div class="cand-track"><div class="cand-fill" style="width:${pct}%"></div></div>
+      <span class="cand-pct">${pct}%</span>
+    </div>`;
+  }).join(''));
+}
+
+function setStatus(cls, msg) {
+  const el = document.getElementById('status');
+  el.className = cls;
+  el.innerHTML = msg;
+}
+
+// ── Promotion dialog ───────────────────────────────────────────────────────
+const PROMO = {
+  white: [['q','♕','Queen'],['r','♖','Rook'],['b','♗','Bishop'],['n','♘','Knight']],
+  black: [['q','♛','Queen'],['r','♜','Rook'],['b','♝','Bishop'],['n','♞','Knight']],
+};
+
+function showPromo() {
+  $('#promo-row').html(PROMO[playerColor].map(([code,sym,name]) =>
+    `<button class="promo-btn" onclick="choosePromo('${code}')">
+       <span class="promo-sym">${sym}</span>
+       <span class="promo-name">${name}</span>
+     </button>`
+  ).join(''));
+  $('#promo-overlay').addClass('open');
+}
+
+function choosePromo(piece) {
+  $('#promo-overlay').removeClass('open');
+  const {from, to} = pendingPromo;
+  pendingPromo = null;
+  sendMove(from, to, piece);
+}
+
+// ── Hint ───────────────────────────────────────────────────────────────────
+function getHint() {
+  $('#btn-hint').prop('disabled', true);
+  fetch('/api/hint')
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) { $('#btn-hint').prop('disabled', false); return; }
+    clearHL();
+    $(`[data-square="${d.from}"]`).addClass('sq-hint');
+    $(`[data-square="${d.to}"]`).addClass('sq-hint');
+    setStatus('your-turn', `Hint: <strong>${d.san}</strong>`);
+    if (d.candidates) showCandidates(d.candidates);
+    $('#btn-hint').prop('disabled', false);
+  });
+}
+
+// ── Resign ─────────────────────────────────────────────────────────────────
+function resign() {
+  if (!active) return;
+  active = false;
+  const winner = playerColor === 'white' ? 'Black' : 'White';
+  setStatus('game-over', `You resigned. ${winner} wins.`);
+  $('#btn-hint, #btn-resign').prop('disabled', true);
+}
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+applyBoardTheme('green');
+rebuildBoard('start');
+</script>
+</body>
+</html>
