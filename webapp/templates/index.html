@@ -616,6 +616,9 @@ function applyState(s) {
   if (s.status === 'over') {
     setStatus('game-over', s.result || 'Game over.');
     $('#btn-hint, #btn-resign').prop('disabled', true);
+    const winner = (s.result || '').includes('You win') ? 'player'
+                 : (s.result || '').includes('Marvin')  ? 'bot' : 'draw';
+    learnFromGame(winner);
   } else if (s.turn === s.playerColor) {
     const chk = s.isCheck ? ' — Check!' : '';
     setStatus('your-turn', 'Your turn' + chk);
@@ -711,6 +714,26 @@ function resign() {
   const winner = playerColor === 'white' ? 'Black' : 'White';
   setStatus('game-over', `You resigned. ${winner} wins.`);
   $('#btn-hint, #btn-resign').prop('disabled', true);
+  learnFromGame('bot');
+}
+
+function learnFromGame(winner) {
+  setStatus('game-over',
+    document.getElementById('status').innerHTML + '<br><small>Marvin is learning from this game…</small>');
+  fetch('/api/learn_from_game', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ winner }),
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.games) {
+      document.getElementById('elo-meta').textContent =
+        `Learned from ${d.games} human game${d.games !== 1 ? 's' : ''} · ${d.positions} positions · loss ${d.avg_loss}`;
+    }
+    fetchElo();
+  })
+  .catch(() => {});
 }
 
 // ── Elo panel ──────────────────────────────────────────────────────────────
@@ -723,16 +746,27 @@ function fetchElo() {
     const deltaEl = document.getElementById('elo-delta');
     const chart   = document.getElementById('elo-chart');
 
-    if (!data.current || !data.history.length) {
-      numEl.textContent  = '—';
-      metaEl.textContent = 'No training data yet. Run train.py to start.';
+    if (!data.current) {
+      numEl.textContent   = '—';
+      metaEl.textContent  = 'No training data yet. Run train.py to start.';
       deltaEl.textContent = '';
+      chart.innerHTML     = '';
+      return;
+    }
+
+    numEl.textContent = Math.round(data.current);
+
+    if (!data.history.length) {
+      deltaEl.textContent  = 'Starting Elo';
+      deltaEl.style.color  = 'var(--muted)';
+      metaEl.textContent   = data.humanGames
+        ? `Learned from ${data.humanGames} human game${data.humanGames !== 1 ? 's' : ''} · run train.py to update Elo`
+        : 'No RL training yet. Run train.py to start.';
       chart.innerHTML = '';
       return;
     }
 
     const h = data.history;
-    numEl.textContent = Math.round(data.current);
 
     // Delta vs previous pit
     if (h.length >= 2) {
