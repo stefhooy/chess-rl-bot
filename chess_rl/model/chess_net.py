@@ -37,9 +37,9 @@ class ResBlock(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         residual = x
-        x = F.relu(self.bn1(self.conv1(x)))
+        x = F.elu(self.bn1(self.conv1(x)))
         x = self.bn2(self.conv2(x))
-        return F.relu(x + residual)
+        return F.elu(x + residual)
 
 
 class ChessNet(nn.Module):
@@ -72,7 +72,7 @@ class ChessNet(nn.Module):
         self.stem = nn.Sequential(
             nn.Conv2d(input_channels, num_channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(num_channels),
-            nn.ReLU(inplace=True),
+            nn.ELU(inplace=True),
         )
 
         # ── Residual tower ────────────────────────────────────────────────
@@ -104,15 +104,15 @@ class ChessNet(nn.Module):
         x = self.tower(x)
 
         # Policy head
-        p = F.relu(self.policy_bn(self.policy_conv(x)))
+        p = F.elu(self.policy_bn(self.policy_conv(x)))
         p = p.view(p.size(0), -1)          # (B, 128)
         p = self.policy_fc(p)              # (B, 4096)
         policy = F.log_softmax(p, dim=1)
 
         # Value head
-        v = F.relu(self.value_bn(self.value_conv(x)))
+        v = F.elu(self.value_bn(self.value_conv(x)))
         v = v.view(v.size(0), -1)          # (B, 64)
-        v = F.relu(self.value_fc1(v))      # (B, 256)
+        v = F.elu(self.value_fc1(v))       # (B, 256)
         v = self.value_fc2(v)              # (B, 1)
         value = torch.tanh(v)
 

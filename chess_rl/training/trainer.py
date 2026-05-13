@@ -175,7 +175,7 @@ class Trainer:
         policy_loss = -(mcts_policies * log_policy).sum(dim=1).mean()
 
         # Value head: predict game outcome
-        value_loss = F.mse_loss(value.squeeze(-1), value_targets)
+        value_loss = F.huber_loss(value.squeeze(-1), value_targets)
 
         loss = policy_loss + value_loss
 

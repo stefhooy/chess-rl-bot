@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import chess
 import csv
+import json
 import sys
 import numpy as np
 import torch
@@ -24,7 +25,7 @@ from flask import Flask, jsonify, render_template, request
 ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(ROOT))
 
-from chess_rl.config import BEST_MODEL_PATH, DEVICE, INITIAL_ELO
+from chess_rl.config import BEST_MODEL_PATH, DEVICE
 from chess_rl.environment.chess_env import ChessEnv
 from chess_rl.mcts.mcts import MCTS
 from chess_rl.model.chess_net import build_model
@@ -38,6 +39,29 @@ _args  = None
 _pos_buffer: list = []   # (obs, policy, mover) tuples from current game
 _online_opt        = None
 _human_games       = 0   # total games Marvin has learned from
+
+# Human-game Elo (real, meaningful — updates after every game)
+_ELO_FILE    = ROOT / "evaluation" / "human_elo.json"
+_MARVIN_ELO  = 600.0
+_ELO_RECORD  = {"wins": 0, "draws": 0, "losses": 0}
+
+
+def _load_elo_file() -> None:
+    global _MARVIN_ELO, _ELO_RECORD, _human_games
+    if _ELO_FILE.exists():
+        d = json.loads(_ELO_FILE.read_text())
+        _MARVIN_ELO  = d.get("elo",    600.0)
+        _ELO_RECORD  = d.get("record", {"wins": 0, "draws": 0, "losses": 0})
+        _human_games = d.get("games",  0)
+
+
+def _save_elo_file() -> None:
+    _ELO_FILE.parent.mkdir(parents=True, exist_ok=True)
+    _ELO_FILE.write_text(json.dumps({
+        "elo":    round(_MARVIN_ELO, 1),
+        "record": _ELO_RECORD,
+        "games":  _human_games,
+    }, indent=2))
 
 _game: dict = {
     "env":          None,
@@ -225,95 +249,99 @@ def state():
 
 @app.route("/api/learn_from_game", methods=["POST"])
 def learn_from_game():
-    global _human_games, _pos_buffer
+    global _human_games, _pos_buffer, _MARVIN_ELO, _ELO_RECORD
 
-    if not _pos_buffer:
-        return jsonify({"steps": 0, "games": _human_games})
+    data      = request.get_json(force=True)
+    winner    = data.get("winner")       # "player" | "bot" | "draw"
+    pc        = _game["player_color"]
 
-    data   = request.get_json(force=True)
-    winner = data.get("winner")   # "player" | "bot" | "draw"
-    pc     = _game["player_color"]
+    # ── Elo update (always, even if no positions buffered) ─────────────────
+    # Opponent strength is unknown, so we assume 50/50 odds every game.
+    # Win = +16, loss = -16, draw = 0.
+    score    = {"bot": 1.0, "draw": 0.5, "player": 0.0}.get(winner, 0.5)
+    delta    = round(32 * (score - 0.5), 1)
+    _MARVIN_ELO += delta
 
-    # Build value targets: +1 if that side won, -1 if lost, 0 draw
-    states, policies, values = [], [], []
-    for obs, pol, mover in _pos_buffer:
-        if winner == "draw":
-            z = 0.0
-        elif (winner == "bot"    and mover != pc) or \
-             (winner == "player" and mover == pc):
-            z = 1.0
-        else:
-            z = -1.0
-        states.append(obs)
-        policies.append(pol)
-        values.append(z)
-
-    n  = len(states)
-    st = torch.tensor(np.stack(states),   dtype=torch.float32, device=_args.device)
-    po = torch.tensor(np.stack(policies), dtype=torch.float32, device=_args.device)
-    va = torch.tensor(values,             dtype=torch.float32, device=_args.device)
-
-    # Mini gradient loop — 30 steps max, batch up to 32
-    n_steps    = min(30, n * 3)
-    total_loss = 0.0
-    _model.train()
-    for _ in range(n_steps):
-        idx = torch.randperm(n, device=_args.device)[:min(32, n)]
-        log_pol, val = _model(st[idx])
-        loss = (-(po[idx] * log_pol).sum(dim=1).mean()
-                + F.mse_loss(val.squeeze(-1), va[idx]))
-        _online_opt.zero_grad()
-        loss.backward()
-        torch.nn.utils.clip_grad_norm_(_model.parameters(), 1.0)
-        _online_opt.step()
-        total_loss += loss.item()
-    _model.eval()
-
-    # Persist the updated weights back to the same file we loaded
-    torch.save({
-        "model_state_dict":     _model.state_dict(),
-        "optimizer_state_dict": _online_opt.state_dict(),
-        "elo":                  INITIAL_ELO,
-        "iteration":            0,
-    }, str(Path(_args.model)))
-
+    key = "wins" if winner == "bot" else "draws" if winner == "draw" else "losses"
+    _ELO_RECORD[key] += 1
     _human_games += 1
-    _pos_buffer   = []
+    _save_elo_file()
+
+    # ── Neural net update (only when positions were recorded) ──────────────
+    n_steps = 0
+    if _pos_buffer:
+        states, policies, values = [], [], []
+        for obs, pol, mover in _pos_buffer:
+            if winner == "draw":
+                z = 0.0
+            elif (winner == "bot"    and mover != pc) or \
+                 (winner == "player" and mover == pc):
+                z = 1.0
+            else:
+                z = -1.0
+            states.append(obs)
+            policies.append(pol)
+            values.append(z)
+
+        n  = len(states)
+        st = torch.tensor(np.stack(states),   dtype=torch.float32, device=_args.device)
+        po = torch.tensor(np.stack(policies), dtype=torch.float32, device=_args.device)
+        va = torch.tensor(values,             dtype=torch.float32, device=_args.device)
+
+        n_steps    = min(30, n * 3)
+        total_loss = 0.0
+        _model.train()
+        for _ in range(n_steps):
+            idx = torch.randperm(n, device=_args.device)[:min(32, n)]
+            log_pol, val = _model(st[idx])
+            loss = (-(po[idx] * log_pol).sum(dim=1).mean()
+                    + F.mse_loss(val.squeeze(-1), va[idx]))
+            _online_opt.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(_model.parameters(), 1.0)
+            _online_opt.step()
+            total_loss += loss.item()
+        _model.eval()
+
+        torch.save({
+            "model_state_dict":     _model.state_dict(),
+            "optimizer_state_dict": _online_opt.state_dict(),
+            "elo": _MARVIN_ELO, "iteration": 0,
+        }, str(Path(_args.model)))
+
+    _pos_buffer = []
 
     return jsonify({
-        "steps":     n_steps,
-        "avg_loss":  round(total_loss / max(n_steps, 1), 4),
-        "positions": n,
-        "games":     _human_games,
+        "elo":    round(_MARVIN_ELO, 1),
+        "delta":  delta,
+        "record": _ELO_RECORD,
+        "games":  _human_games,
+        "steps":  n_steps,
     })
 
 
 @app.route("/api/elo")
 def elo():
+    # RL training history (from train.py pit matches)
     csv_path = ROOT / "evaluation" / "elo_history.csv"
-    if not csv_path.exists():
-        return jsonify({
-            "current":    INITIAL_ELO,
-            "history":    [],
-            "humanGames": _human_games,
-        })
-
-    rows = []
-    with open(csv_path, newline="") as f:
-        for row in csv.DictReader(f):
-            rows.append({
-                "pit":      int(row["pit"]),
-                "elo":      float(row["elo"]),
-                "win_rate": float(row["win_rate"]),
-                "wins":     int(row["wins"]),
-                "draws":    int(row["draws"]),
-                "losses":   int(row["losses"]),
-            })
+    rl_history = []
+    if csv_path.exists():
+        with open(csv_path, newline="") as f:
+            for row in csv.DictReader(f):
+                rl_history.append({
+                    "pit":      int(row["pit"]),
+                    "elo":      float(row["elo"]),
+                    "win_rate": float(row["win_rate"]),
+                    "wins":     int(row["wins"]),
+                    "draws":    int(row["draws"]),
+                    "losses":   int(row["losses"]),
+                })
 
     return jsonify({
-        "current":    rows[-1]["elo"] if rows else INITIAL_ELO,
-        "history":    rows,
-        "humanGames": _human_games,
+        "elo":       round(_MARVIN_ELO, 1),   # real human-game Elo
+        "record":    _ELO_RECORD,
+        "games":     _human_games,
+        "rlHistory": rl_history,               # training progress chart
     })
 
 
@@ -345,6 +373,7 @@ if __name__ == "__main__":
 
     # Separate low-LR optimizer for online human-game learning
     _online_opt = torch.optim.Adam(_model.parameters(), lr=1e-4)
+    _load_elo_file()
 
     print(f"Ready. Open http://{_args.host}:{_args.port}")
     app.run(host=_args.host, port=_args.port, debug=False)
