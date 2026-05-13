@@ -33,7 +33,7 @@
 
 body {
   font-family: 'Segoe UI', system-ui, sans-serif;
-  background: var(--bg);
+  background: var(--bg) url('/static/img/background.png') center/cover no-repeat fixed;
   color: var(--text);
   min-height: 100vh;
   display: flex;
@@ -52,13 +52,11 @@ header {
   flex-wrap: wrap;
 }
 
-.logo {
-  font-size: 1.3rem;
-  font-weight: 700;
-  letter-spacing: 2px;
-  color: var(--text);
+.logo img {
+  height: 48px;
+  width: auto;
+  display: block;
 }
-.logo em { color: var(--accent); font-style: normal; }
 
 .theme-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 
@@ -319,7 +317,7 @@ input[type=range] { flex: 1; accent-color: var(--accent); }
 <body>
 
 <header>
-  <div class="logo">MARV<em>IN</em> ♟</div>
+  <div class="logo"><img src="/static/img/logo.png" alt="Marvin"></div>
   <div class="theme-bar">
     <label>Board</label>
     <select id="sel-board" onchange="applyBoardTheme(this.value)">
