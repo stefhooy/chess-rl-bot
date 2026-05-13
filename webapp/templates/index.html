@@ -40,26 +40,21 @@ body {
   flex-direction: column;
 }
 
-/* ── Header ────────────────────────────────────────────────────────────── */
-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 20px;
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
-  gap: 12px;
-  flex-wrap: wrap;
+/* ── Floating logo ─────────────────────────────────────────────────────── */
+.logo {
+  position: fixed;
+  top: 16px;
+  left: 20px;
+  z-index: 100;
 }
-
 .logo img {
-  height: 48px;
+  height: 80px;
   width: auto;
   display: block;
+  filter: drop-shadow(0 2px 8px rgba(0,0,0,0.7));
 }
 
 .theme-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-
 .theme-bar label { font-size: 0.75rem; color: var(--muted); }
 
 select {
@@ -316,30 +311,7 @@ input[type=range] { flex: 1; accent-color: var(--accent); }
 </head>
 <body>
 
-<header>
-  <div class="logo"><img src="/static/img/logo.png" alt="Marvin"></div>
-  <div class="theme-bar">
-    <label>Board</label>
-    <select id="sel-board" onchange="applyBoardTheme(this.value)">
-      <option value="green"  selected>Lichess Green</option>
-      <option value="classic">Classic Brown</option>
-      <option value="blue">Ocean Blue</option>
-      <option value="walnut">Walnut</option>
-      <option value="purple">Purple</option>
-      <option value="dark">Dark Slate</option>
-      <option value="pink">Rose</option>
-    </select>
-    <label>Pieces</label>
-    <select id="sel-piece" onchange="applyPieceTheme(this.value)">
-      <option value="cburnett" selected>CBurnett</option>
-      <option value="merida">Merida</option>
-      <option value="alpha">Alpha</option>
-      <option value="fantasy">Fantasy</option>
-      <option value="chessnut">Chessnut</option>
-      <option value="wikipedia">Wikipedia</option>
-    </select>
-  </div>
-</header>
+<div class="logo"><img src="/static/img/logo.png" alt="Marvin"></div>
 
 <main>
   <!-- Board + eval bar -->
@@ -368,6 +340,27 @@ input[type=range] { flex: 1; accent-color: var(--accent); }
         <input type="range" id="sim" min="10" max="400" step="10" value="100"
                oninput="document.getElementById('simval').textContent=this.value">
         <span class="sim-val" id="simval">100</span>
+      </div>
+      <div class="theme-bar" style="margin-top:8px">
+        <label>Board</label>
+        <select id="sel-board" onchange="applyBoardTheme(this.value)">
+          <option value="green" selected>Lichess Green</option>
+          <option value="classic">Classic Brown</option>
+          <option value="blue">Ocean Blue</option>
+          <option value="walnut">Walnut</option>
+          <option value="purple">Purple</option>
+          <option value="dark">Dark Slate</option>
+          <option value="pink">Rose</option>
+        </select>
+        <label>Pieces</label>
+        <select id="sel-piece" onchange="applyPieceTheme(this.value)">
+          <option value="cburnett" selected>CBurnett</option>
+          <option value="merida">Merida</option>
+          <option value="alpha">Alpha</option>
+          <option value="fantasy">Fantasy</option>
+          <option value="chessnut">Chessnut</option>
+          <option value="wikipedia">Wikipedia</option>
+        </select>
       </div>
       <button class="btn btn-primary" onclick="startGame()">Start Game</button>
     </div>
