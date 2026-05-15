@@ -19,6 +19,7 @@ Usage
 
 import argparse
 import copy
+import json
 import sys
 import time
 from pathlib import Path
@@ -139,6 +140,20 @@ def _load_weights(model: ChessNet, path: Path, device: str) -> None:
     print(f"  Loaded weights from {path}")
 
 
+def _bump_human_elo(win_rate: float) -> tuple[float, float]:
+    """Update human_elo.json when a model is promoted. Returns (new_elo, delta)."""
+    elo_file = Path(__file__).parent / "evaluation" / "human_elo.json"
+    if elo_file.exists():
+        d = json.loads(elo_file.read_text())
+    else:
+        d = {"elo": 600.0, "record": {"wins": 0, "draws": 0, "losses": 0}, "games": 0}
+    delta = round(64 * (win_rate - 0.5), 1)
+    d["elo"] = round(d["elo"] + delta, 1)
+    elo_file.parent.mkdir(parents=True, exist_ok=True)
+    elo_file.write_text(json.dumps(d, indent=2))
+    return d["elo"], delta
+
+
 # ── Main ───────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -241,10 +256,12 @@ def main() -> None:
         # ── 4. Promote or revert ───────────────────────────────────────────
         elo = evaluator.current_elo
         if win_rate > WIN_THRESHOLD:
+            new_human_elo, delta = _bump_human_elo(win_rate)
             print(
                 f"[4/4] PROMOTED  (win_rate={win_rate:.1%} > "
                 f"{WIN_THRESHOLD:.0%})  Elo ~{elo:.0f}"
             )
+            print(f"      Marvin's Elo: {new_human_elo:.0f} (+{delta})")
             best_model = copy.deepcopy(model)
             _save(model, best_path, iteration, trainer, elo)
         else:
