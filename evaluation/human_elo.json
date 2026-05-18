@@ -1,9 +1,9 @@
 {
-  "elo": 520.0,
+  "elo": 472.0,
   "record": {
     "wins": 0,
     "draws": 0,
-    "losses": 5
+    "losses": 8
   },
-  "games": 5
+  "games": 8
 }
