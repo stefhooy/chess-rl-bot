@@ -50,7 +50,7 @@ WIN_THRESHOLD: float = 0.55     # new model must win >55% to be promoted
 # ── Evaluation ─────────────────────────────────────────────────────────────
 PIT_GAMES: int = 40             # games in each evaluation pit match
 ELO_K: float = 32.0             # Elo K-factor
-INITIAL_ELO: float = 1200.0
+INITIAL_ELO: float = 600.0
 
 
 # ── Supervised pretraining ─────────────────────────────────────────────────

@@ -140,18 +140,24 @@ def _load_weights(model: ChessNet, path: Path, device: str) -> None:
     print(f"  Loaded weights from {path}")
 
 
-def _bump_human_elo(win_rate: float) -> tuple[float, float]:
-    """Update human_elo.json when a model is promoted. Returns (new_elo, delta)."""
+def _load_human_elo() -> float:
+    """Read current Elo from human_elo.json, defaulting to 600 if not found."""
+    elo_file = Path(__file__).parent / "evaluation" / "human_elo.json"
+    if elo_file.exists():
+        return json.loads(elo_file.read_text()).get("elo", 600.0)
+    return 600.0
+
+
+def _save_human_elo(new_elo: float) -> None:
+    """Write updated Elo back to human_elo.json after a promotion."""
     elo_file = Path(__file__).parent / "evaluation" / "human_elo.json"
     if elo_file.exists():
         d = json.loads(elo_file.read_text())
     else:
         d = {"elo": 600.0, "record": {"wins": 0, "draws": 0, "losses": 0}, "games": 0}
-    delta = round(64 * (win_rate - 0.5), 1)
-    d["elo"] = round(d["elo"] + delta, 1)
+    d["elo"] = round(new_elo, 1)
     elo_file.parent.mkdir(parents=True, exist_ok=True)
     elo_file.write_text(json.dumps(d, indent=2))
-    return d["elo"], delta
 
 
 # ── Main ───────────────────────────────────────────────────────────────────
@@ -200,6 +206,7 @@ def main() -> None:
     evaluator = Evaluator(
         num_simulations=args.simulations,
         device=args.device,
+        initial_elo=_load_human_elo(),
     )
 
     # Best model starts as a copy of the initial model
@@ -256,12 +263,10 @@ def main() -> None:
         # ── 4. Promote or revert ───────────────────────────────────────────
         elo = evaluator.current_elo
         if win_rate > WIN_THRESHOLD:
-            new_human_elo, delta = _bump_human_elo(win_rate)
             print(
                 f"[4/4] PROMOTED  (win_rate={win_rate:.1%} > "
-                f"{WIN_THRESHOLD:.0%})  Elo ~{elo:.0f}"
+                f"{WIN_THRESHOLD:.0%})"
             )
-            print(f"      Marvin's Elo: {new_human_elo:.0f} (+{delta})")
             best_model = copy.deepcopy(model)
             _save(model, best_path, iteration, trainer, elo)
         else:
@@ -270,6 +275,10 @@ def main() -> None:
                 f"{WIN_THRESHOLD:.0%}).  Reverting to best model."
             )
             model.load_state_dict(best_model.state_dict())
+
+        # Always update Elo after every pit — tracks full evolution including regressions
+        _save_human_elo(elo)
+        print(f"      Marvin's Elo: {elo:.0f}")
 
         # Always persist the latest checkpoint for resuming
         _save(model, latest_path, iteration, trainer, elo)
