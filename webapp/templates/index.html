@@ -378,8 +378,6 @@ input[type=range] { flex: 1; accent-color: var(--accent); }
         <span><span style="color:var(--muted)">D</span> <strong id="rec-d">0</strong></span>
         <span><span style="color:var(--red)">L</span> <strong id="rec-l">0</strong></span>
       </div>
-      <svg id="elo-chart" viewBox="0 0 240 56" width="100%" height="56"
-           style="display:block;overflow:visible"></svg>
       <div id="elo-meta" style="font-size:0.75rem;color:var(--muted);margin-top:6px">
         Play a game to start tracking.
       </div>
@@ -755,54 +753,8 @@ function fetchElo() {
       ? 'Play a game to start tracking.'
       : `${d.games} game${d.games !== 1 ? 's' : ''} played vs you`;
 
-    // RL training sparkline (only shows after train.py runs)
-    const chart = document.getElementById('elo-chart');
-    if (d.rlHistory && d.rlHistory.length >= 2) {
-      drawEloChart(chart, d.rlHistory);
-    } else {
-      chart.innerHTML = '';
-    }
   })
   .catch(() => {});
-}
-
-function drawEloChart(svg, history) {
-  const W = 240, H = 56, pad = 4;
-  const elos = history.map(h => h.elo);
-  const lo   = Math.min(1200, ...elos) - 5;
-  const hi   = Math.max(1200, ...elos) + 5;
-  const range = hi - lo || 1;
-
-  function px(i) { return history.length < 2 ? W/2 : pad + (i / (history.length-1)) * (W - 2*pad); }
-  function py(e) { return H - pad - ((e - lo) / range) * (H - 2*pad); }
-
-  // Baseline at Elo 1200
-  const baseY = py(1200).toFixed(1);
-
-  // Area fill under the line
-  const pts  = history.map((h,i) => `${px(i).toFixed(1)},${py(h.elo).toFixed(1)}`).join(' ');
-  const first = `${px(0).toFixed(1)},${H}`;
-  const last_ = `${px(history.length-1).toFixed(1)},${H}`;
-
-  svg.innerHTML = `
-    <defs>
-      <linearGradient id="eg" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%"   stop-color="#58a6ff" stop-opacity="0.3"/>
-        <stop offset="100%" stop-color="#58a6ff" stop-opacity="0"/>
-      </linearGradient>
-    </defs>
-    <line x1="${pad}" y1="${baseY}" x2="${W-pad}" y2="${baseY}"
-          stroke="var(--border)" stroke-width="1" stroke-dasharray="3,3"/>
-    <polygon points="${first} ${pts} ${last_}"
-             fill="url(#eg)"/>
-    <polyline points="${pts}"
-              fill="none" stroke="var(--accent)" stroke-width="2"
-              stroke-linejoin="round" stroke-linecap="round"/>
-    <circle cx="${px(history.length-1).toFixed(1)}" cy="${py(elos[elos.length-1]).toFixed(1)}"
-            r="3" fill="var(--accent)"/>
-    <text x="${pad}" y="${H-1}" font-size="8" fill="var(--muted)">${Math.round(lo+5)}</text>
-    <text x="${pad}" y="10"    font-size="8" fill="var(--muted)">${Math.round(hi-5)}</text>
-  `;
 }
 
 // Fetch immediately then refresh every 15 seconds (live during training)
