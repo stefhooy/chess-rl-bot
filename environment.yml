@@ -14,3 +14,4 @@ dependencies:
       - torch==2.11.0
       - flask
       - berserk
+      - pytest
